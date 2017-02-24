@@ -38,15 +38,16 @@ class Model(object):
     """ A model representing our neural network """
     def __init__(self, session):
         self._session = session
-        self.vocabulary_size = 100000
-        self.learning_rate = 0.5
-        self.embedding_size = 100
-        self.max_title_length = 30
-        self.lstm_neurons = 200
-        self.user_count = 13000
+
+        self.vocabulary_size = 15000
+        self.learning_rate = 0.3
+        self.embedding_size = 165
+        self.max_title_length = 25
+        self.lstm_neurons = 500
+        self.user_count = 6
         self.batch_size = 25
-        self.training_epochs = 5
-        self.users_to_select = 2
+        self.training_epochs = 500
+        self.users_to_select = 1
         # Will be set in build_graph
         self._input = None
         self._target = None
@@ -61,6 +62,7 @@ class Model(object):
             self.data = data.Data(data_path="./data/", verbose=True,
                                   vocab_size=self.vocabulary_size)
             self.load_checkpoint()
+
 
     def build_graph(self):
         """ Builds the model in tensorflow """
@@ -112,7 +114,7 @@ class Model(object):
         error = tf.nn.softmax_cross_entropy_with_logits(labels=self._target,
                                                         logits=logits)
         cross_entropy = tf.reduce_mean(error)
-        self.train_op = tf.train.GradientDescentOptimizer(
+        self.train_op = tf.train.AdamOptimizer(
             self.learning_rate).minimize(cross_entropy)
         self.error = cross_entropy
 
@@ -128,6 +130,14 @@ class Model(object):
         # Last step
         self._init_op = tf.group(tf.global_variables_initializer(),
                                  tf.local_variables_initializer())
+
+        tf.summary.scalar('cross_entropy', self.error)
+        # Last step
+
+        self.merged = tf.summary.merge_all()
+        log_dir = "./data"
+        self.train_writer = tf.summary.FileWriter(log_dir + '/train')
+
         self.saver = tf.train.Saver()
 
     def load_checkpoint(self):
@@ -180,20 +190,23 @@ class Model(object):
             # Debug print out
             epoch = self.data.completed_training_epochs
             done = self.data.percent_of_epoch
-            error = self.train_batch()
-            validation_error = self.validate_batch()
+            error = self.train_batch(i)
+            # validation_error = self.validate_batch()
 
-            error_sum += error
-            val_error_sum += validation_error
+            # error_sum += error
+            # val_error_sum += validation_error
 
             # Don't validate so often
-            if i % (self.data.train_size//self.batch_size//10) == 0 and i:
-                avg_val_err = val_error_sum/i
-                avg_trn_err = error_sum/i
-                print("Training... Epoch: {:d}, Done: {:%}" \
-                    .format(epoch, done))
-                print("Validation error: {:f} ({:f}), Training error {:f} ({:f})" \
-                    .format(validation_error, avg_val_err, error, avg_trn_err))
+            # if i % (self.data.train_size//self.batch_size//10) == 0 and i:
+            #     avg_val_err = val_error_sum/i
+            #     avg_trn_err = error_sum/i
+            #     print("Training... Epoch: {:d}, Done: {:%}" \
+            #         .format(epoch, done))
+            #     print("Training error {:f} ({:f})" \
+            #           .format( error, avg_trn_err))
+                # print("Validation error: {:f} ({:f}), Training error {:f} ({:f})" \
+                #     .format(validation_error, avg_val_err, error, avg_trn_err))
+
 
             # Do a full evaluation once an epoch is complete
             if epoch != old_epoch:
@@ -205,16 +218,18 @@ class Model(object):
         # Save model when done training
         self.save_checkpoint()
 
-    def train_batch(self):
+    def train_batch(self, i):
         """ Trains for one batch and returns cross entropy error """
         with tf.device("/cpu:0"):
             batch_input, batch_label = self.data.next_train_batch \
             (self.max_title_length, self.user_count, self.batch_size)
 
-        self._session.run(self.train_op,
+        summary, _ =self._session.run([self.merged, self.train_op],
                           {self._input: batch_input,
                            self._target: batch_label})
 
+        self.train_writer.add_summary(summary, i)
+        # self.save_checkpoint()
         return self._session.run(self.error,
                                  feed_dict={self._input: batch_input,
                                             self._target: batch_label})
