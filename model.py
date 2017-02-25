@@ -42,12 +42,12 @@ class Model(object):
         self.vocabulary_size = 15000
         self.learning_rate = 0.3
         self.embedding_size = 165
-        self.max_title_length = 25
+        self.max_title_length = 30
         self.lstm_neurons = 500
         self.user_count = 6
-        self.batch_size = 25
-        self.training_epochs = 500
-        self.users_to_select = 1
+        self.batch_size = 15
+        self.training_epochs = 50
+        self.users_to_select = 2
         # Will be set in build_graph
         self._input = None
         self._target = None
@@ -132,11 +132,13 @@ class Model(object):
                                  tf.local_variables_initializer())
 
         tf.summary.scalar('cross_entropy', self.error)
+        tf.summary.scalar('precision training', self.precision[1])
         # Last step
 
         self.merged = tf.summary.merge_all()
         log_dir = "./data"
         self.train_writer = tf.summary.FileWriter(log_dir + '/train')
+        self.valid_writer = tf.summary.FileWriter(log_dir + '/valid')
 
         self.saver = tf.train.Saver()
 
@@ -154,16 +156,20 @@ class Model(object):
         """ Saves the model to a file """
         self.saver.save(self._session, path)
 
-    def validate(self):
+    def validate(self, epoch):
         """ Validates the model and returns the final precision """
         print("Starting validation...")
         val_data, val_labels = self.data.get_validation(self.max_title_length, self.user_count)
 
-        _, prec = self._session.run(self.precision,
-                                    feed_dict={self._input: val_data,
+        summary, prec = self._session.run([self.merged, self.precision],
+                                    {self._input: val_data,
                                                self._target: val_labels})
+        self.valid_writer.add_summary(summary, epoch)
 
-        print("Precision: {:%}".format(prec))
+        # summary, _ = self._session.run([self.merged, self.train_op],
+        #                                {self._input: batch_input,
+        #                                 self._target: batch_label})
+        # print("Precision: {:%}".format(prec))
         return None
 
     def validate_batch(self):
@@ -212,7 +218,7 @@ class Model(object):
             if epoch != old_epoch:
                 print("Epoch complete...")
                 self.save_checkpoint()
-                self.validate()
+                self.validate(epoch)
             old_epoch = epoch
 
         # Save model when done training
@@ -238,7 +244,8 @@ def main():
     """ A main method that creates the model and starts training it """
     model = Model(tf.InteractiveSession())
     model.train()
-    model.validate()
+    # model.validate()
+    model.train_writer.close()
 
 if __name__ == "__main__":
     main()
